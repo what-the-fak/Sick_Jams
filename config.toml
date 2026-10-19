@@ -1,0 +1,19 @@
+# Sick Jams settings. Delete a line to use its default.
+
+folder = "Sick Jams"          # playlist folder in Music.app
+lookup_popularity = true      # use Deezer's public API to tell hits from deep cuts
+album_picks = 5               # albums not in your library to suggest each run (0 = off)
+
+[mixes]
+mixes = 6                     # how many mixes to make
+tracks_per_mix = 50
+deep_cut_ratio = 0.2          # share of each mix that's lesser-known songs
+max_per_artist = 4            # per mix
+min_pool = 60                 # a vibe needs at least this many songs to get a mix
+recent_half_life_days = 14    # how fast "recently played" fades
+
+# Vibes: "Punk & Emo", "Alt & Indie", "Rock", "Heavy", "Ska & Reggae", "Pop", "Hip-Hop",
+#        "Electronic", "Roots & Blues", "Soundtracks & Anime"
+always_include = []           # e.g. ["Ska & Reggae"]
+never_include = []            # e.g. ["Soundtracks & Anime"]
+

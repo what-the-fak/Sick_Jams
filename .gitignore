@@ -1,0 +1,9 @@
+# Personal data: play history, Deezer cache and album picks
+.data/
+Album Picks.txt
+
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.venv/
