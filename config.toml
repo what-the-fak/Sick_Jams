@@ -17,3 +17,8 @@ recent_half_life_days = 14    # how fast "recently played" fades
 always_include = []           # e.g. ["Ska & Reggae"]
 never_include = []            # e.g. ["Soundtracks & Anime"]
 
+[claude]
+enabled = true                # Claude's pick: a playlist + album suggestions (needs an API key)
+model = "claude-haiku-5-5"
+tracks = 30
+albums = 2

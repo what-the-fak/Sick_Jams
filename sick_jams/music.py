@@ -119,7 +119,7 @@ function run(argv) {
     let parentId = null;
     try { parentId = p.parent.persistentID(); } catch (e) {}
     if (parentId !== folderId) continue;
-    const mt = p.name().match(/^Sick Jams (\d+|Bonus)\b/);
+    const mt = p.name().match(/^Sick Jams (\d+|Bonus|Claude)\b/);
     if (mt) existing[mt[1]] = p;
   }
 
@@ -138,9 +138,9 @@ function run(argv) {
     }
     report.push(mix.name + ": " + added + " tracks");
   });
-  // Daily slots you no longer need go away; an old Bonus mix stays until you make a new one.
+  // Daily slots you no longer need go away; Bonus/Claude mixes stay until replaced.
   for (const slot in existing) {
-    if (slot === "Bonus") continue;
+    if (slot === "Bonus" || slot === "Claude") continue;
     m.delete(existing[slot]); report.push("removed old slot " + slot);
   }
   return report.join("\n");
@@ -149,7 +149,7 @@ function run(argv) {
 
 
 def write_playlists(folder: str, mixes: list[dict]) -> str:
-    """mixes: [{"slot": "1".."N" or "Bonus", "name": str, "description": str, "ids": [...]}]"""
+    """mixes: [{"slot": "1".."N", "Bonus" or "Claude", "name", "description", "ids": [...]}]"""
     spec = json.dumps({"folder": folder, "mixes": mixes})
     if WINDOWS:
         return _powershell(_WIN_WRITE, spec).strip()
@@ -215,7 +215,7 @@ for ($i = 1; $i -le $all.Count; $i++) {
   $parent = $null
   try { $parent = $p.Parent } catch {}
   if (-not $parent -or (Get-Pid $parent) -ne $folderId) { continue }
-  if ($p.Name -match '^Sick Jams (\d+|Bonus)') { $existing[$Matches[1]] = $p }
+  if ($p.Name -match '^Sick Jams (\d+|Bonus|Claude)\b') { $existing[$Matches[1]] = $p }
 }
 
 $report = @()
@@ -237,9 +237,9 @@ foreach ($mix in $spec.mixes) {
   }
   $report += "$($mix.name): $added tracks"
 }
-# Daily slots you no longer need go away; an old Bonus mix stays until you make a new one.
+# Daily slots you no longer need go away; Bonus/Claude mixes stay until replaced.
 foreach ($slot in @($existing.Keys)) {
-  if ($slot -eq 'Bonus') { continue }
+  if ($slot -eq 'Bonus' -or $slot -eq 'Claude') { continue }
   $existing[$slot].Delete(); $report += "removed old slot $slot"
 }
 $report -join "`n"

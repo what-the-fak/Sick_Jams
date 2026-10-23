@@ -29,6 +29,8 @@ streaming-only libraries.
      iTunes opens on its own if it isn't already running.
    - It looks up every artist in your library on Deezer, which takes a few minutes. Later runs take
      seconds.
+4. **Optional, Claude's pick:** see [below](#claudes-pick). It needs `pip3 install anthropic` and
+   an Anthropic API key.
 
 Playlists land in a **Sick Jams** folder in Music or iTunes as `Sick Jams 1 · Punk & Emo`,
 `Sick Jams 2 · Rock`, and so on. The same playlists are refilled each run (never duplicated). Tick
@@ -75,11 +77,42 @@ the studio album holding most of that artist's popular songs, skipping best-ofs,
 singles. Each pick lists which of your artists it's based on and has a Deezer link. Picks don't repeat for 4
 weeks, so the list changes each run. Set `album_picks = 0` in `config.toml` to turn it off.
 
+## Claude's pick
+
+If you add an Anthropic API key, each run also asks Claude Haiku for something new. It gets:
+- your recent plays
+- the mixes that run just made, so it steers somewhere different
+- the artists in your library
+- a numbered list of candidate songs you own
+
+Back come **Sick Jams Claude · <theme>**, a ~30-song playlist from your library with a short
+explanation in its description, plus **2 album suggestions** added to `Album Picks.txt` under
+"Claude's picks". Every suggested album is checked against Deezer and then MusicBrainz, so made-up
+albums are dropped, and albums you already own are skipped. If a run doesn't call Claude, the last
+Claude playlist stays put.
+
+**Cost:** the prompt is about 20K tokens. With Haiku 5.5's thinking included, one run costs about
+half a cent, so $5 of credit lasts about 800 runs. The terminal prints the actual cost each run.
+
+**Setup:**
+1. `pip3 install anthropic` (Windows: `py -m pip install anthropic`).
+2. Get an API key. A Claude Pro subscription doesn't cover API use; it's billed separately.
+   1. Sign in at [platform.claude.com](https://platform.claude.com) (the Claude Console).
+   2. Add a little prepaid credit under **Billing**.
+   3. Create a key under **API Keys**.
+3. Run `python3 -m sick_jams --set-api-key` and paste the key. It's checked, then saved in `.data/`,
+   which git never uploads. Setting an `ANTHROPIC_API_KEY` environment variable also works.
+
+Use `--no-claude` to skip it for one run, or set `enabled = false` under `[claude]` in
+`config.toml` to turn it off.
+
 ## Command line
 
 ```
 python3 -m sick_jams --dry-run     # preview in the terminal, don't change Music
-python3 -m sick_jams --no-lookup   # skip Deezer (uses cached data)
+python3 -m sick_jams --no-lookup   # skip Deezer (uses cached data) and Claude
+python3 -m sick_jams --no-claude   # skip Claude's pick this run
+python3 -m sick_jams --set-api-key # save an Anthropic API key for Claude's pick
 ```
 
 Needs Python 3.11+ on macOS or Windows. The first run looks up each artist on Deezer, which takes a few

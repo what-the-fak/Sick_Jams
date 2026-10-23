@@ -15,6 +15,11 @@ from .music import read_library, write_playlists
 from .popularity import Popularity
 
 try:
+    from .claude_picks import format_claude_albums
+except ImportError:              # Anthropic SDK not installed; Claude's pick is skipped
+    format_claude_albums = None
+
+try:
     from .local_extras import after_album_picks   # optional personal add-on, not in the repo
 except ImportError:
     after_album_picks = None
@@ -64,7 +69,19 @@ def main():
     ap.add_argument("--into", metavar="TEXT",
                     help="band, album or song to build a bonus mix around (skips the prompt)")
     ap.add_argument("--no-prompt", action="store_true", help="don't ask about a bonus mix")
+    ap.add_argument("--no-claude", action="store_true", help="skip Claude's pick this run")
+    ap.add_argument("--set-api-key", action="store_true",
+                    help="save an Anthropic API key for Claude's pick, then exit")
     args = ap.parse_args()
+
+    if args.set_api_key:
+        try:
+            from .claude_picks import save_key
+        except ImportError:
+            print("Install the Anthropic SDK first: pip3 install anthropic")
+            return
+        save_key(DATA)
+        return
 
     into = args.into
     if into is None and not args.no_prompt and sys.stdin.isatty():
@@ -133,16 +150,29 @@ def main():
                          "ids": [t.pid for t in bonus]})
             mixed_now += [t.pid for t in bonus]
 
-    picks, picks_text = [], ""
+    picks = []
     n_picks = cfg.get("album_picks", 5)
+    now = time.time()
     if n_picks and not args.no_lookup:
         print("\nFinding albums to check out...")
-        now = time.time()
         state["picked"] = [p for p in state["picked"] if now - p["t"] < PICK_REPEAT_DAYS * 86400]
         picks = recommend_albums(prof, pop, {p["id"] for p in state["picked"]}, n_picks)
-        picks_text = format_picks(picks, f"{today}, {run_date.year}")
+
+    claude_cfg = cfg.get("claude", {})
+    claude_albums = []
+    if claude_cfg.get("enabled", True) and not args.no_claude and not args.no_lookup:
+        claude_albums = run_claude(prof, pop, mixes, claude_cfg, spec, mixed_now,
+                                   exclude={(p.artist, p.title) for p in picks})
+
+    picks_text = ""
+    if picks or claude_albums:
+        picks_text = format_picks(picks, f"{today}, {run_date.year}") if picks else \
+            f"Sick Jams album picks ({today}, {run_date.year})\n"
+        if claude_albums:
+            picks_text += "\n" + format_claude_albums(claude_albums)
         print("\n" + picks_text)
         state["picked"] += [{"id": p.artist_id, "t": now} for p in picks]
+        picks += [p for p, _ in claude_albums]
 
     if args.dry_run:
         print("\nDry run: Music.app and Album Picks.txt not changed.")
@@ -161,6 +191,36 @@ def main():
 
     if picks and after_album_picks and not args.no_prompt:
         after_album_picks(picks)
+
+
+def run_claude(prof, pop, mixes, claude_cfg, spec, mixed_now, exclude=()):
+    """Adds Claude's playlist to spec; returns Claude's album picks [(AlbumPick, why)]."""
+    try:
+        from .claude_picks import claude_mix, load_key
+    except ImportError:
+        print("\nClaude's pick is off: install the Anthropic SDK with `pip3 install anthropic`.")
+        return []
+    key = load_key(DATA)
+    if not key:
+        print("\nClaude's pick is off: no API key yet. Run `python3 -m sick_jams --set-api-key`.")
+        return []
+    print("\nAsking Claude for something new...")
+    res = claude_mix(prof, pop, mixes, key, claude_cfg.get("model", "claude-haiku-5-5"),
+                     claude_cfg.get("tracks", 30), claude_cfg.get("albums", 2), exclude)
+    if not res:
+        return []
+    if res.tracks:
+        name = f"Sick Jams Claude · {res.name}"[:80]
+        print(f"\n{name}  ({len(res.tracks)} tracks)\n  {res.theme}")
+        for t in res.tracks[:12]:
+            print(f"    {t.artist} – {t.name}")
+        if len(res.tracks) > 12:
+            print(f"    ...+{len(res.tracks) - 12} more")
+        spec.append({"slot": "Claude", "name": name, "description": res.theme,
+                     "ids": [t.pid for t in res.tracks]})
+        mixed_now += [t.pid for t in res.tracks]
+    print(f"  (Claude call cost about ${res.cost:.4f})")
+    return res.albums
 
 
 if __name__ == "__main__":
