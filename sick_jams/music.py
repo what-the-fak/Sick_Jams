@@ -114,21 +114,25 @@ function run(argv) {
   folder = folder || m.make({new: "folderPlaylist", withProperties: {name: spec.folder}});
   const folderId = folder.persistentID();
 
-  const existing = {};
+  const existing = {}, claudes = {};
   for (const p of m.userPlaylists()) {
     let parentId = null;
     try { parentId = p.parent.persistentID(); } catch (e) {}
     if (parentId !== folderId) continue;
-    const mt = p.name().match(/^Sick Jams (\d+|Bonus|Claude)\b/);
+    if (/^Sick Jams Claude\b/.test(p.name())) { claudes[p.persistentID()] = p; continue; }
+    const mt = p.name().match(/^Sick Jams (\d+|Bonus)\b/);
     if (mt) existing[mt[1]] = p;
   }
+  let newClaude = null;
 
   const report = [];
   spec.mixes.forEach(mix => {
     const slot = mix.slot;
-    let p = existing[slot];
+    // Claude's playlists are kept (newest few), so each run gets a new one.
+    let p = slot === "Claude" ? null : existing[slot];
     if (p) { delete existing[slot]; m.delete(p.tracks); }
     else p = m.make({new: "userPlaylist", at: folder, withProperties: {name: mix.name}});
+    if (slot === "Claude") { newClaude = p.persistentID(); claudes[newClaude] = p; }
     p.name = mix.name;
     try { p.description = mix.description; } catch (e) {}
     let added = 0;
@@ -138,22 +142,46 @@ function run(argv) {
     }
     report.push(mix.name + ": " + added + " tracks");
   });
-  // Daily slots you no longer need go away; Bonus/Claude mixes stay until replaced.
+  // Daily slots you no longer need go away; the Bonus mix stays until replaced.
   for (const slot in existing) {
-    if (slot === "Bonus" || slot === "Claude") continue;
+    if (slot === "Bonus") continue;
     m.delete(existing[slot]); report.push("removed old slot " + slot);
   }
+  // Claude's playlists, oldest first: ones we don't know the age of, then the saved order, then
+  // this run's. Delete from the front until only the newest spec.claude_keep remain.
+  const known = (spec.claude_order || []).filter(id => claudes[id] && id !== newClaude);
+  const order = Object.keys(claudes).filter(id => !known.includes(id) && id !== newClaude)
+    .concat(known, newClaude ? [newClaude] : []);
+  while (order.length > spec.claude_keep) {
+    const id = order.shift();
+    report.push("removed old Claude playlist: " + claudes[id].name());
+    m.delete(claudes[id]);
+  }
+  report.push("CLAUDE_ORDER:" + JSON.stringify(order));
   return report.join("\n");
 }
 """
 
 
-def write_playlists(folder: str, mixes: list[dict]) -> str:
-    """mixes: [{"slot": "1".."N", "Bonus" or "Claude", "name", "description", "ids": [...]}]"""
-    spec = json.dumps({"folder": folder, "mixes": mixes})
-    if WINDOWS:
-        return _powershell(_WIN_WRITE, spec).strip()
-    return _osascript(_WRITE_SCRIPT, spec).strip()
+def write_playlists(folder: str, mixes: list[dict], claude_order: list[str] = (),
+                    claude_keep: int = 5) -> tuple[str, list[str]]:
+    """Writes the mixes; returns (report, Claude playlist IDs oldest first).
+
+    mixes: [{"slot": "1".."N", "Bonus" or "Claude", "name", "description", "ids": [...]}].
+    Daily and Bonus slots are refilled in place. Each Claude mix becomes a new playlist, and only
+    the newest claude_keep are kept (claude_order is the saved oldest-first order).
+    """
+    spec = json.dumps({"folder": folder, "mixes": mixes, "claude_order": list(claude_order),
+                       "claude_keep": claude_keep})
+    out = (_powershell(_WIN_WRITE, spec) if WINDOWS else _osascript(_WRITE_SCRIPT, spec)).strip()
+    lines, order = [], list(claude_order)
+    for line in out.splitlines():
+        if line.startswith("CLAUDE_ORDER:"):
+            order = json.loads(line[len("CLAUDE_ORDER:"):] or "[]")
+            order = [order] if isinstance(order, str) else order     # PowerShell un-wraps 1 item
+        else:
+            lines.append(line)
+    return "\n".join(lines), order
 
 
 # ---------------------------------------------------------------------------------------------
@@ -209,24 +237,30 @@ if (-not $folder) { $folder = $app.CreateFolder($spec.folder) }
 $folderId = Get-Pid $folder
 
 $existing = @{}
+$claudes = @{}
 for ($i = 1; $i -le $all.Count; $i++) {
   $p = $all.Item($i)
   if ($p.Kind -ne 2 -or $p.SpecialKind -eq 4) { continue }
   $parent = $null
   try { $parent = $p.Parent } catch {}
   if (-not $parent -or (Get-Pid $parent) -ne $folderId) { continue }
-  if ($p.Name -match '^Sick Jams (\d+|Bonus|Claude)\b') { $existing[$Matches[1]] = $p }
+  if ($p.Name -match '^Sick Jams Claude\b') { $claudes[(Get-Pid $p)] = $p; continue }
+  if ($p.Name -match '^Sick Jams (\d+|Bonus)\b') { $existing[$Matches[1]] = $p }
 }
+$newClaude = $null
 
 $report = @()
 foreach ($mix in $spec.mixes) {
-  $p = $existing[$mix.slot]
+  # Claude's playlists are kept (newest few), so each run gets a new one.
+  $p = $null
+  if ($mix.slot -ne 'Claude') { $p = $existing[$mix.slot] }
   if ($p) {
     $existing.Remove($mix.slot)
     while ($p.Tracks.Count -gt 0) { $p.Tracks.Item(1).Delete() }
   } else {
     $p = $folder.CreatePlaylist($mix.name)
   }
+  if ($mix.slot -eq 'Claude') { $newClaude = Get-Pid $p; $claudes[$newClaude] = $p }
   $p.Name = $mix.name
   $added = 0
   foreach ($id in $mix.ids) {
@@ -237,11 +271,22 @@ foreach ($mix in $spec.mixes) {
   }
   $report += "$($mix.name): $added tracks"
 }
-# Daily slots you no longer need go away; Bonus/Claude mixes stay until replaced.
+# Daily slots you no longer need go away; the Bonus mix stays until replaced.
 foreach ($slot in @($existing.Keys)) {
-  if ($slot -eq 'Bonus' -or $slot -eq 'Claude') { continue }
+  if ($slot -eq 'Bonus') { continue }
   $existing[$slot].Delete(); $report += "removed old slot $slot"
 }
+# Claude's playlists, oldest first: unknown age, then the saved order, then this run's.
+$known = @(@($spec.claude_order) | Where-Object { $_ -and $claudes.ContainsKey($_) -and $_ -ne $newClaude })
+$order = @(@($claudes.Keys) | Where-Object { $known -notcontains $_ -and $_ -ne $newClaude }) + $known
+if ($newClaude) { $order += $newClaude }
+while ($order.Count -gt $spec.claude_keep) {
+  $id = $order[0]
+  $order = @($order | Select-Object -Skip 1)
+  $report += "removed old Claude playlist: $($claudes[$id].Name)"
+  $claudes[$id].Delete()
+}
+$report += "CLAUDE_ORDER:" + (ConvertTo-Json -InputObject @($order) -Compress)
 $report -join "`n"
 """
 

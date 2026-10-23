@@ -88,8 +88,12 @@ If you add an Anthropic API key, each run also asks Claude Haiku for something n
 Back come **Sick Jams Claude · <theme>**, a ~30-song playlist from your library with a short
 explanation in its description, plus **2 album suggestions** added to `Album Picks.txt` under
 "Claude's picks". Every suggested album is checked against Deezer and then MusicBrainz, so made-up
-albums are dropped, and albums you already own are skipped. If a run doesn't call Claude, the last
-Claude playlist stays put.
+albums are dropped, and albums you already own are skipped.
+
+Each run adds a new Claude playlist instead of replacing the last one. The 5 most recent are kept and
+older ones are deleted (change `keep` under `[claude]` in `config.toml`). To keep one for good, rename
+it or move it out of the Sick Jams folder. Only playlists still named "Sick Jams Claude …" in that
+folder count toward the 5 or get deleted.
 
 **Cost:** the prompt is about 20K tokens. With Haiku 5.5's thinking included, one run costs about
 half a cent, so $5 of credit lasts about 800 runs. The terminal prints the actual cost each run.

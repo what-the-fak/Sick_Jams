@@ -22,3 +22,4 @@ enabled = true                # Claude's pick: a playlist + album suggestions (n
 model = "claude-haiku-5-5"
 tracks = 30
 albums = 2
+keep = 5                      # Claude playlists to keep; older ones are deleted

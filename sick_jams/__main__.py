@@ -182,7 +182,9 @@ def main():
         (ROOT / "Album Picks.txt").write_text(picks_text)
 
     print(f"\nWriting playlists to the '{folder}' folder in Music...")
-    print(write_playlists(folder, spec))
+    report, state["claude_playlists"] = write_playlists(
+        folder, spec, state.get("claude_playlists", []), claude_cfg.get("keep", 5))
+    print(report)
     state["mixed"] = (state["mixed"] + [mixed_now])[-2:]
     DATA.mkdir(exist_ok=True)
     (DATA / "state.json").write_text(json.dumps(state))
